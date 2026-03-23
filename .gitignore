@@ -1,0 +1,45 @@
+# --- Python / Backend ---
+# Виртуальное окружение
+venv/
+env/
+.venv/
+
+# Скомпилированные файлы
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Секреты и переменные окружения (ВАЖНО!)
+.env
+.env.local
+*.key
+
+# База данных (локальная)
+*.sqlite3
+*.db
+
+# Логи
+*.log
+
+# --- Node.js / Frontend ---
+# Зависимости
+node_modules/
+
+# Сборка
+dist/
+build/
+.out
+
+# Секреты фронтенда
+.env
+.env.local
+
+# --- IDE и Редакторы ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Операционная система ---
+.DS_Store
+Thumbs.db
