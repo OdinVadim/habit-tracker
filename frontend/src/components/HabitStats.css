@@ -1,0 +1,238 @@
+/* Оверлей (фон) */
+.stats-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+/* Модальное окно */
+.stats-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 700px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+.stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.stats-header h2 {
+  margin: 0;
+  color: #333;
+}
+
+.stats-close {
+  background: none;
+  border: none;
+  font-size: 32px;
+  cursor: pointer;
+  color: #999;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.stats-close:hover {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+/* Переключатель периода */
+.stats-period-selector {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.stats-period-selector button {
+  flex: 1;
+  padding: 12px 24px;
+  border: 2px solid #e0e0e0;
+  background: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.stats-period-selector button.active {
+  border-color: #4CAF50;
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  font-weight: bold;
+}
+
+.stats-period-selector button:hover:not(.active) {
+  border-color: #4CAF50;
+}
+
+/* Карточки статистики */
+.stats-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.stat-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.stat-value {
+  font-size: 32px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.stat-label {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 4px;
+}
+
+.stat-subtitle {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Календарь */
+.stats-calendar h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.calendar-day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: transform 0.2s;
+  cursor: default;
+}
+
+.calendar-day:hover {
+  transform: scale(1.1);
+}
+
+.calendar-day.completed {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.calendar-day.missed {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+.day-name {
+  font-size: 10px;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.day-number {
+  font-size: 16px;
+  font-weight: bold;
+  margin: 4px 0;
+}
+
+.day-value {
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+/* Легенда */
+.stats-legend {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  padding-top: 16px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.legend-color {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+}
+
+.legend-color.completed {
+  background-color: #4CAF50;
+}
+
+.legend-color.missed {
+  background-color: #ffebee;
+}
+
+/* Загрузка и ошибки */
+.stats-loading,
+.stats-error {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+  font-size: 16px;
+}
+
+.stats-error {
+  color: #f44336;
+}
+
+/* Адаптивность */
+@media (max-width: 600px) {
+  .stats-modal {
+    padding: 16px;
+  }
+  
+  .calendar-grid {
+    grid-template-columns: repeat(7, 1fr);
+  }
+  
+  .stat-value {
+    font-size: 24px;
+  }
+}
