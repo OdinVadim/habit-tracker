@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, REGISTER_OTP_REQUIRED } from '../../context/AuthContext';
 import TwoFactorModal from '../../components/TwoFactorModal';
+
+const PENDING_REGISTER_EMAIL_KEY = 'pending_register_email';
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -9,9 +11,25 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showOtp, setShowOtp] = useState(false);
+  const [otpHint, setOtpHint] = useState('Введите код из письма для завершения регистрации.');
 
   const { registerStep1, verifyRegisterEmailOtp, error, isLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PENDING_REGISTER_EMAIL_KEY);
+    if (pending) {
+      setEmail(pending);
+    }
+  }, []);
+
+  function openOtpModal(hint: string) {
+    if (email.trim()) {
+      sessionStorage.setItem(PENDING_REGISTER_EMAIL_KEY, email.trim());
+    }
+    setOtpHint(hint);
+    setShowOtp(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,7 +43,7 @@ export default function Register() {
       await registerStep1(email, username, password);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === REGISTER_OTP_REQUIRED) {
-        setShowOtp(true);
+        openOtpModal(`Код отправлен на ${email.trim()}`);
       }
     }
   }
@@ -95,8 +113,29 @@ export default function Register() {
 
           {error && !showOtp && <p className="error">{error}</p>}
 
-          <button type="submit" disabled={isLoading || showOtp}>
+          <button type="submit" disabled={isLoading || showOtp} style={{ marginBottom: '10px' }}>
             {isLoading ? 'Загрузка...' : 'Отправить код на email'}
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoading || showOtp || !email.trim()}
+            onClick={() =>
+              openOtpModal(
+                `Введите код из письма на ${email.trim() || 'ваш email'}.`
+              )
+            }
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              background: '#fff',
+            }}
+          >
+            У меня уже есть код
           </button>
         </form>
 
@@ -107,7 +146,7 @@ export default function Register() {
 
       {showOtp && (
         <TwoFactorModal
-          description={`Код отправлен на ${email.trim()}`}
+          description={otpHint}
           onClose={() => setShowOtp(false)}
           onVerify={handleOtpSubmit}
         />

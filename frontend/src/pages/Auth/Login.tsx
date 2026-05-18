@@ -1,15 +1,36 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth, LOGIN_OTP_REQUIRED } from '../../context/AuthContext';
 import TwoFactorModal from '../../components/TwoFactorModal';
+
+const PENDING_LOGIN_KEY = 'pending_login_id';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showOtp, setShowOtp] = useState(false);
+  const [otpHint, setOtpHint] = useState(
+    'Введите 6-значный код из письма, привязанного к аккаунту.'
+  );
 
   const { login, verifyLoginEmailOtp, error, isLoading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const pending = sessionStorage.getItem(PENDING_LOGIN_KEY);
+    if (pending) {
+      setEmail(pending);
+    }
+  }, []);
+
+  function openOtpModal(hint: string) {
+    const id = email.trim();
+    if (id) {
+      sessionStorage.setItem(PENDING_LOGIN_KEY, id);
+    }
+    setOtpHint(hint);
+    setShowOtp(true);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,7 +39,9 @@ export default function Login() {
       await login(email, password);
     } catch (err: unknown) {
       if (err instanceof Error && err.message === LOGIN_OTP_REQUIRED) {
-        setShowOtp(true);
+        openOtpModal(
+          'Код отправлен на email. Если письмо не пришло сразу, проверьте папку «Спам».'
+        );
       }
     }
   }
@@ -63,8 +86,29 @@ export default function Login() {
 
           {error && !showOtp && <p className="error">{error}</p>}
 
-          <button type="submit" disabled={isLoading}>
+          <button type="submit" disabled={isLoading} style={{ marginBottom: '10px' }}>
             {isLoading ? 'Загрузка...' : 'Отправить код на email'}
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoading || !email.trim()}
+            onClick={() =>
+              openOtpModal(
+                'Введите код из последнего письма. Новое письмо можно запросить кнопкой выше через несколько секунд.'
+              )
+            }
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              background: '#fff',
+            }}
+          >
+            У меня уже есть код
           </button>
         </form>
 
@@ -75,7 +119,7 @@ export default function Login() {
 
       {showOtp && (
         <TwoFactorModal
-          description="Мы отправили 6-значный код на email, привязанный к аккаунту. Введите его ниже."
+          description={otpHint}
           onClose={() => setShowOtp(false)}
           onVerify={handleOtpSubmit}
         />

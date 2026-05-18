@@ -15,7 +15,7 @@ import './App.css';
 
 function App() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
 
   const [habits, setHabits] = useState<Habit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,15 +173,41 @@ function App() {
     setShowingStats(habitId);
   }
 
-  function isCompletedToday(habitId: number, habitType: string): boolean {
-    const log = todayLogs[habitId];
-    if (!log) return false;
-    
-    if (habitType === 'binary') {
-      return log.completed === true;
-    } else {
-      return (log.actual_value || 0) > 0;
+  type TodayStatus = 'none' | 'done' | 'partial';
+
+  function getTodayStatus(habit: Habit): TodayStatus {
+    const log = todayLogs[habit.id];
+    if (!log) return 'none';
+
+    if (habit.habit_type === 'binary') {
+      return log.completed === true ? 'done' : 'none';
     }
+
+    const actual = log.actual_value ?? 0;
+    if (actual <= 0) return 'none';
+
+    const target = habit.target_value ?? 0;
+    if (target <= 0 || actual >= target) return 'done';
+    return 'partial';
+  }
+
+  function habitCardStyles(status: TodayStatus) {
+    if (status === 'done') {
+      return {
+        backgroundColor: '#e8f5e9',
+        border: '2px solid #4CAF50',
+      };
+    }
+    if (status === 'partial') {
+      return {
+        backgroundColor: '#fff8e1',
+        border: '2px solid #FFC107',
+      };
+    }
+    return {
+      backgroundColor: 'white',
+      border: '2px solid transparent',
+    };
   }
 
   function handleLogout() {
@@ -202,20 +228,41 @@ function App() {
       }}
     >
       <h1 style={{ margin: 0 }}>🎯 Habit Tracker</h1>
-      <button
-        type="button"
-        onClick={handleLogout}
+      <div
         style={{
-          padding: '8px 14px',
-          fontSize: '14px',
-          cursor: 'pointer',
-          borderRadius: '4px',
-          border: '1px solid #ccc',
-          background: '#f5f5f5',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          flexWrap: 'wrap',
         }}
       >
-        Выйти
-      </button>
+        {user && (
+          <span
+            style={{
+              fontSize: '15px',
+              fontWeight: 600,
+              color: '#333',
+            }}
+            title={user.email}
+          >
+            {user.username}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleLogout}
+          style={{
+            padding: '8px 14px',
+            fontSize: '14px',
+            cursor: 'pointer',
+            borderRadius: '4px',
+            border: '1px solid #ccc',
+            background: '#f5f5f5',
+          }}
+        >
+          Выйти
+        </button>
+      </div>
     </div>
 
     {/* Статус сервера */}
@@ -324,17 +371,27 @@ function App() {
       
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {habits.map((habit) => {
-          const completed = isCompletedToday(habit.id, habit.habit_type);
-          
+          const status = getTodayStatus(habit);
+          const cardStyle = habitCardStyles(status);
+          const progressColor = status === 'partial' ? '#FFC107' : '#4CAF50';
+          const markButtonBg =
+            status === 'done' ? '#4CAF50' : status === 'partial' ? '#FFC107' : '#2196F3';
+          const markButtonColor = status === 'partial' ? '#333' : 'white';
+          const markLabel =
+            status === 'done'
+              ? '✓ Выполнено'
+              : status === 'partial'
+                ? '◐ Частично'
+                : 'Отметить';
+
           return (
             <div 
               key={habit.id}
               style={{
                 padding: '15px',
-                backgroundColor: completed ? '#e8f5e9' : 'white',
                 borderRadius: '8px',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                border: completed ? '2px solid #4CAF50' : '2px solid transparent',
+                ...cardStyle,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
@@ -346,7 +403,7 @@ function App() {
                   {habit.habit_type === 'quantitative' && todayLogs[habit.id] && (
                     <div style={{ fontSize: '14px', color: '#666', marginTop: '5px' }}>
                       Сегодня: {todayLogs[habit.id].actual_value} из {habit.target_value} {habit.unit}
-                      {todayLogs[habit.id].actual_value && (
+                      {(todayLogs[habit.id].actual_value ?? 0) > 0 && (
                         <div style={{ 
                           marginTop: '5px', 
                           width: '100%', 
@@ -358,9 +415,9 @@ function App() {
                           <div style={{
                             width: `${Math.min((todayLogs[habit.id].actual_value! / (habit.target_value || 1)) * 100, 100)}%`,
                             height: '100%',
-                            backgroundColor: '#4CAF50',
+                            backgroundColor: progressColor,
                             transition: 'width 0.3s'
-                          }}></div>
+                          }} />
                         </div>
                       )}
                     </div>
@@ -372,14 +429,14 @@ function App() {
                     onClick={() => handleMarkComplete(habit.id, habit.habit_type)}
                     style={{
                       padding: '8px 16px',
-                      backgroundColor: completed ? '#4CAF50' : '#2196F3',
-                      color: 'white',
+                      backgroundColor: markButtonBg,
+                      color: markButtonColor,
                       border: 'none',
                       borderRadius: '4px',
                       cursor: 'pointer',
                     }}
                   >
-                    {completed ? '✓ Выполнено' : 'Отметить'}
+                    {markLabel}
                   </button>
                   
                   <button 

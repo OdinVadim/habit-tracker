@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException
+import logging
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -24,7 +27,14 @@ from .auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from .schema_migration import apply_schema_hotfixes
-from .otp_service import normalize_email, create_send_otp, verify_otp
+from .otp_service import (
+    normalize_email,
+    create_send_otp,
+    verify_otp,
+    can_resend_otp,
+    OTP_RESEND_SECONDS,
+    Purpose,
+)
 
 
 @asynccontextmanager
@@ -35,6 +45,19 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Habit Tracker API", lifespan=lifespan)
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception):
+    """Чтобы при 500 ответ всё равно проходил через CORS middleware."""
+    logger.exception("Unhandled error: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Внутренняя ошибка сервера. Проверьте логи backend."},
+    )
+
 
 # CORS настройки
 app.add_middleware(
@@ -580,6 +603,25 @@ def calculate_streaks(logs: list, habit_type: str) -> tuple[int, int]:
 
 # === ЭНДПОИНТЫ АУТЕНТИФИКАЦИИ ===
 
+def _issue_otp_or_raise(db: Session, user: models.User, purpose: Purpose) -> OtpSentResponse:
+    """
+    После успешной проверки пароля всегда разрешаем шаг ввода OTP.
+    Новое письмо отправляется только если прошёл интервал OTP_RESEND_SECONDS.
+    """
+    try:
+        if can_resend_otp(db, user.id, purpose):
+            create_send_otp(db, user, purpose, throttle=False)
+        else:
+            print(
+                f"[OTP] Письмо не отправлено (интервал {OTP_RESEND_SECONDS} с): "
+                f"используйте предыдущий код для {user.email}"
+            )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+
+    return OtpSentResponse()
+
+
 def _find_user_by_login_identifier(db: Session, identifier: str) -> Optional[models.User]:
     """Поиск пользователя по email или username (как при логине)."""
     ident = identifier.strip()
@@ -608,16 +650,7 @@ def register_request_otp(user_data: UserRegister, db: Session = Depends(get_db))
         u_email.hashed_password = get_password_hash(user_data.password)
         db.commit()
         db.refresh(u_email)
-        try:
-            sent = create_send_otp(db, u_email, "register", throttle=True)
-        except RuntimeError as e:
-            raise HTTPException(status_code=503, detail=str(e)) from e
-        if not sent:
-            raise HTTPException(
-                status_code=429,
-                detail="Подождите перед повторной отправкой кода",
-            )
-        return OtpSentResponse()
+        return _issue_otp_or_raise(db, u_email, "register")
 
     user = models.User(
         email=email,
@@ -628,16 +661,7 @@ def register_request_otp(user_data: UserRegister, db: Session = Depends(get_db))
     db.add(user)
     db.commit()
     db.refresh(user)
-    try:
-        sent = create_send_otp(db, user, "register", throttle=True)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    if not sent:
-        raise HTTPException(
-            status_code=429,
-            detail="Подождите перед повторной отправкой кода",
-        )
-    return OtpSentResponse()
+    return _issue_otp_or_raise(db, user, "register")
 
 
 @app.post("/api/auth/register/verify-otp", response_model=Token)
@@ -683,18 +707,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
             detail="Сначала подтвердите email по коду из письма при регистрации",
         )
 
-    try:
-        sent = create_send_otp(db, user, "login", throttle=True)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-
-    if not sent:
-        raise HTTPException(
-            status_code=429,
-            detail="Подождите перед повторной отправкой кода",
-        )
-
-    return OtpSentResponse()
+    return _issue_otp_or_raise(db, user, "login")
 
 
 @app.post("/api/auth/login/verify-otp", response_model=Token)

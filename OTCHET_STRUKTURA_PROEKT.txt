@@ -1,0 +1,253 @@
+================================================================================
+  ОТЧЁТ О СТРУКТУРЕ ПРОЕКТА «HABIT TRACKER»
+  Дата составления: 05.05.2026
+  Формат: текстовый файл (UTF-8)
+================================================================================
+
+1. НАЗНАЧЕНИЕ И ОБЩАЯ АРХИТЕКТУРА
+--------------------------------------------------------------------------------
+Проект — веб-приложение для учёта привычек с разделением на клиент и сервер:
+
+  • Frontend: SPA на React + TypeScript, сборка Vite, маршрутизация React Router.
+  • Backend: REST API на FastAPI (Python), ORM SQLAlchemy 2.x, JWT-аутентификация.
+  • База данных: PostgreSQL или SQLite (строка подключения задаётся переменной
+    окружения DATABASE_URL; для PostgreSQL в коде нормализуется драйвер
+    postgresql+psycopg://).
+
+Клиент обращается к API по HTTP. Базовый URL API во frontend захардкожен как
+http://127.0.0.1:8000 (файл frontend/src/services/api.ts).
+
+
+2. ДЕРЕВО КАТАЛОГОВ (ЛОГИЧЕСКАЯ СТРУКТУРА)
+--------------------------------------------------------------------------------
+habit-tracker/
+├── README.md                 — краткое описание проекта и стека
+├── plan.txt                  — план разработки (если используется)
+├── .gitignore
+├── backend/                  — серверная часть (FastAPI)
+│   ├── requirements.txt      — зависимости Python
+│   ├── .env                  — локальные секреты (не коммитить)
+│   ├── .env.example          — пример переменных (БД, SMTP)
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py           — точка входа API: маршруты, схемы Pydantic, бизнес-логика
+│       ├── database.py       — engine, SessionLocal, Base, get_db
+│       ├── models.py         — модели SQLAlchemy (таблицы)
+│       ├── auth.py           — хэширование паролей (bcrypt/passlib), JWT
+│       ├── email_service.py  — отправка писем через SMTP (smtplib)
+│       ├── otp_service.py    — генерация/проверка email-OTP, связь с БД
+│       └── schema_migration.py — «горячие» правки схемы без Alembic (добавление столбцов)
+└── frontend/                 — клиентская часть (React + TS + Vite)
+    ├── package.json
+    ├── vite.config.ts
+    ├── index.html
+    ├── public/               — статика (favicon, иконки)
+    └── src/
+        ├── main.tsx          — вход: Router, AuthProvider, маршруты
+        ├── App.tsx           — основной экран привычек (после входа)
+        ├── App.css, index.css
+        ├── types/index.ts    — типы данных для API и сущностей
+        ├── services/api.ts   — обёртки fetch() к backend
+        ├── context/AuthContext.tsx — состояние пользователя и токена
+        ├── components/
+        │   ├── HabitStats.tsx / HabitStats.css — модальное окно статистики
+        │   └── TwoFactorModal.tsx — ввод 6-значного кода (используется для email-OTP)
+        └── pages/Auth/
+            ├── Login.tsx, Register.tsx, Setup2fa.tsx, auth.css
+
+
+3. BACKEND: ОСНОВНЫЕ МОДУЛИ И РОЛИ
+--------------------------------------------------------------------------------
+3.1. app/main.py
+  Роль: монолитный модуль приложения FastAPI.
+  Содержит:
+    • lifespan: при старте вызывается Base.metadata.create_all(engine) — создание
+      отсутствующих таблиц; затем apply_schema_hotfixes() — добавление столбцов в
+      существующие БД без миграций Alembic (например email_verified).
+    • CORS: разрешены origin localhost:5173 и 127.0.0.1:5173 (типичный Vite).
+    • Pydantic-схемы для привычек, логов, статистики, пользователя, токена, OTP.
+    • Зависимость get_current_user: HTTP Bearer, декодирование JWT, проверка
+      is_active и email_verified.
+    • Эндпоинты привычек: создание/список/удаление, логи за период, статистика
+      (неделя/месяц), расчёт серий (streak).
+    • Эндпоинты аутентификации (см. раздел 4).
+
+  Программные решения:
+    • Защита данных привычек: операции с habit_id проверяют habit.user_id == current_user.id.
+    • Часть эндпоинтов (например toggle/today-log в текущей версии) может не требовать
+      токен — это потенциальная зона для усиления безопасности при развитии проекта.
+
+3.2. app/database.py
+  Роль: подключение к БД.
+  Решения:
+    • load_dotenv() — загрузка .env.
+    • Преобразование postgresql:// → postgresql+psycopg:// для SQLAlchemy + psycopg3.
+    • Для SQLite: connect_args check_same_thread=False.
+
+3.3. app/models.py
+  Сущности (ORM ↔ таблицы):
+    • User — пользователь: email, username, hashed_password, email_verified,
+      is_active, created_at, last_login; поля two_factor_enabled / two_factor_secret
+      оставлены для совместимости со старой схемой PostgreSQL (NOT NULL), логика TOTP
+      в API не используется.
+    • EmailOtp — одноразовые коды: user_id, purpose (register|login), code_hash,
+      expires_at, consumed_at, attempts_left, sent_to_email, created_at.
+    • Habit — привычка пользователя (user_id, тип binary/quantitative, цели и т.д.).
+    • HabitLog — дневная отметка по привычке (уникальность habit_id + log_date).
+
+3.4. app/auth.py
+  Роль: криптография и JWT.
+  Решения:
+    • passlib + bcrypt для хэша пароля.
+    • python-jose: HS256, issuer в токене, exp.
+    • SECRET_KEY задан константой в коде — для production следует вынести в env.
+
+3.5. app/email_service.py
+  Роль: отправка письма с кодом через SMTP (stdlib smtplib).
+  Решения:
+    • Порт 465 + SMTP_TLS=true → SMTP_SSL.
+    • Порт 587 + SMTP_TLS=true → STARTTLS после EHLO.
+    • Без SMTP_HOST — явная ошибка RuntimeError с подсказкой настроить .env.
+
+3.6. app/otp_service.py
+  Роль: жизненный цикл OTP.
+  Решения:
+    • Код из 6 цифр, TTL ~10 минут, ограничение повторной отправки ~60 секунд,
+      лимит попыток ввода.
+    • В БД хранится HMAC-SHA256 от (SECRET_KEY, code), не сам код.
+    • Транзакция: сначала INSERT строки OTP, затем отправка письма; при ошибке SMTP
+      выполняется rollback — в БД не остаётся «мёртвый» код без отправки.
+
+3.7. app/schema_migration.py
+  Роль: минимальная эволюция схемы без Alembic.
+  Решения:
+    • Если в таблице users нет столбца email_verified — ALTER TABLE + для уже
+      существующих строк UPDATE email_verified=TRUE (чтобы не отрезать старых
+      пользователей после появления поля).
+
+
+4. АУТЕНТИФИКАЦИЯ И 2FA ПО EMAIL (ОСНОВНОЙ ПОТОК)
+--------------------------------------------------------------------------------
+Реализована двухшаговая схема и для регистрации, и для входа.
+
+4.1. Регистрация
+  POST /api/auth/register/request-otp  (JSON: email, username, password)
+    — создаёт или обновляет неподтверждённого пользователя, отправляет OTP (register).
+    — при конфликте занятого email/username (чтобы не раскрывать факт существования)
+      возвращает тот же ответ OTP_SENT без отправки (см. логику в main.py).
+
+  POST /api/auth/register/verify-otp  (JSON: email, code)
+    — проверяет OTP, выставляет email_verified=true, возвращает JWT (Token).
+
+4.2. Вход
+  POST /api/auth/login  (OAuth2PasswordRequestForm: username = email или login, password)
+    — проверяет пароль, требует email_verified, отправляет OTP (login), ответ OTP_SENT.
+
+  POST /api/auth/login/verify-otp  (JSON: identifier, code)
+    — проверяет OTP, возвращает JWT, обновляет last_login.
+
+4.3. Прочее
+  GET  /api/auth/me     — профиль (только с валидным Bearer-токеном).
+  POST /api/auth/logout — формальный logout (токен на клиенте удаляется вручную).
+
+Защищённые маршруты привычек используют Depends(get_current_user).
+
+
+5. API ПРИВЫЧЕК (КРАТКИЙ СПИСОК)
+--------------------------------------------------------------------------------
+  POST   /api/habits                        — создать привычку
+  GET    /api/habits                        — список привычек текущего пользователя
+  GET    /api/habits/{id}                   — одна привычка
+  DELETE /api/habits/{id}                   — удалить
+  POST   /api/habits/{id}/logs              — создать/обновить лог за сегодня
+  GET    /api/habits/{id}/logs              — логи за последние N дней
+  GET    /api/habits/{id}/today-log         — лог за сегодня (без проверки владельца в коде)
+  POST   /api/habits/{id}/toggle            — переключить binary (без проверки владельца)
+  GET    /api/habits/{id}/stats/weekly      — статистика за 7 дней
+  GET    /api/habits/{id}/stats/monthly     — статистика за 30 дней
+
+Служебные:
+  GET /           — приветствие
+  GET /health     — проверка БД
+  GET /api/db/ping
+
+
+6. FRONTEND: СТРУКТУРА И РЕШЕНИЯ
+--------------------------------------------------------------------------------
+6.1. main.tsx
+  • BrowserRouter + маршруты:
+      /login, /register, /setup-2fa — публичные
+      /, /dashboard — защищены обёрткой ProtectedRoute (наличие auth_token в localStorage).
+  • AuthProvider оборачивает всё дерево — доступ к useAuth().
+
+6.2. services/api.ts
+  • Единая точка HTTP-вызовов к backend.
+  • formatApiDetail — разбор ошибок FastAPI (detail строка или массив).
+  • Методы: requestRegisterOtp, verifyRegisterOtp, login (form), verifyLoginOtp,
+    CRUD привычек и статистика.
+
+6.3. context/AuthContext.tsx
+  • Хранит user, token, isLoading, error.
+  • Сохраняет токен и сериализованного пользователя в localStorage.
+  • Логин: после пароля ожидается OTP_SENT → сигнал LOGIN_OTP_REQUIRED для UI.
+  • Регистрация: request-otp → REGISTER_OTP_REQUIRED для показа модалки.
+  • verifyLoginEmailOtp использует последний введённый identifier (ref).
+
+6.4. Страницы Auth
+  • Login / Register — форма + TwoFactorModal для ввода кода из письма.
+  • Setup2fa — поясняющая страница (TOTP заменён на email-OTP).
+
+6.5. App.tsx
+  • Основной UI списка привычек, создание, отметка, удаление, статистика.
+  • Токен читается из localStorage для запросов getHabits и т.д.
+  • Кнопка «Выйти» — очистка контекста и переход на /login.
+
+
+7. КОНФИГУРАЦИЯ (.env)
+--------------------------------------------------------------------------------
+backend/.env (локально, не в репозитории):
+  DATABASE_URL — строка подключения SQLAlchemy.
+  SMTP_* — параметры почты для отправки кодов.
+
+Пример шаблона: backend/.env.example
+
+
+8. ЗАВИСИМОСТИ (КЛЮЧЕВЫЕ)
+--------------------------------------------------------------------------------
+Backend (requirements.txt), среди прочего:
+  fastapi, uvicorn, sqlalchemy, pydantic, email-validator, python-multipart,
+  python-jose[cryptography], passlib[bcrypt], bcrypt<4 (совместимость с passlib),
+  psycopg[binary] (PostgreSQL), python-dotenv.
+
+Frontend:
+  react, react-router-dom, typescript, vite (см. package.json).
+
+
+9. СБОРКА И ЗАПУСК (КРАТКО)
+--------------------------------------------------------------------------------
+Backend:
+  cd backend
+  python -m venv .venv
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements.txt
+  uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+Frontend:
+  cd frontend
+  npm install
+  npm run dev
+
+
+10. ИЗВЕСТНЫЕ ОГРАНИЧЕНИЯ И НАПРАВЛЕНИЯ РАЗВИТИЯ
+--------------------------------------------------------------------------------
+  • Нет Alembic: изменения схемы частично компенсируются create_all + schema_migration;
+    для production предпочтительны версионируемые миграции.
+  • JWT SECRET_KEY в коде — нужно вынести в переменные окружения.
+  • API_URL на frontend захардкожен — для деплоя лучше VITE_API_URL.
+  • Некоторые эндпоинты привычек могут не проверять владельца — стоит унифицировать
+    с Depends(get_current_user) для всех операций с данными пользователя.
+
+
+================================================================================
+  КОНЕЦ ОТЧЁТА
+================================================================================

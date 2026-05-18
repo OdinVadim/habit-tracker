@@ -43,7 +43,7 @@ class EmailOtp(Base):
     expires_at = Column(DateTime, nullable=False)
     consumed_at = Column(DateTime, nullable=True)
     attempts_left = Column(Integer, nullable=False, default=5)
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    created_at = Column(DateTime, nullable=False)
     sent_to_email = Column(String(255), nullable=False)
 
     user = relationship("User", backref="email_otps")

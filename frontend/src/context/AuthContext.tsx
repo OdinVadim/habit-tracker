@@ -12,6 +12,9 @@ import {
 export const LOGIN_OTP_REQUIRED = 'LOGIN_OTP_REQUIRED';
 export const REGISTER_OTP_REQUIRED = 'REGISTER_OTP_REQUIRED';
 
+const PENDING_LOGIN_KEY = 'pending_login_id';
+const PENDING_REGISTER_EMAIL_KEY = 'pending_register_email';
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
@@ -64,20 +67,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      pendingLoginIdentifierRef.current = identifier.trim();
+      const trimmed = identifier.trim();
+      pendingLoginIdentifierRef.current = trimmed;
+      sessionStorage.setItem(PENDING_LOGIN_KEY, trimmed);
 
-      const response = await login(identifier.trim(), password);
+      const response = await login(trimmed, password);
       if (response.message === 'OTP_SENT') {
         throw new Error(LOGIN_OTP_REQUIRED);
       }
       throw new Error('Неожиданный ответ сервера');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Ошибка входа';
-      if (message === LOGIN_OTP_REQUIRED) {
-        throw err;
+      if (
+        message === LOGIN_OTP_REQUIRED ||
+        message.includes('повторной отправкой')
+      ) {
+        throw new Error(LOGIN_OTP_REQUIRED);
       }
       setError(message);
-      pendingLoginIdentifierRef.current = null;
       throw err;
     } finally {
       setIsLoading(false);
@@ -89,7 +96,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       setError(null);
 
-      await requestRegisterOtp({ email: email.trim(), username, password });
+      const trimmedEmail = email.trim();
+      sessionStorage.setItem(PENDING_REGISTER_EMAIL_KEY, trimmedEmail);
+      await requestRegisterOtp({ email: trimmedEmail, username, password });
       throw new Error(REGISTER_OTP_REQUIRED);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Ошибка регистрации';
@@ -104,9 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function handleVerifyLoginEmailOtp(code: string) {
-    const identifier = pendingLoginIdentifierRef.current;
+    const identifier =
+      pendingLoginIdentifierRef.current || sessionStorage.getItem(PENDING_LOGIN_KEY);
     if (!identifier) {
-      const message = 'Сначала введите логин и пароль';
+      const message = 'Сначала введите логин и пароль (или нажмите «У меня уже есть код»)';
       setError(message);
       throw new Error(message);
     }
@@ -114,6 +124,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const response: AuthResponse = await verifyLoginOtp(identifier, code);
       pendingLoginIdentifierRef.current = null;
+      sessionStorage.removeItem(PENDING_LOGIN_KEY);
       persistAuth(response);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Неверный код';
@@ -125,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function handleVerifyRegisterEmailOtp(email: string, code: string) {
     try {
       const response: AuthResponse = await verifyRegisterOtp(email.trim(), code);
+      sessionStorage.removeItem(PENDING_REGISTER_EMAIL_KEY);
       persistAuth(response);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Неверный код';
@@ -135,6 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function handleLogout() {
     pendingLoginIdentifierRef.current = null;
+    sessionStorage.removeItem(PENDING_LOGIN_KEY);
+    sessionStorage.removeItem(PENDING_REGISTER_EMAIL_KEY);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     setToken(null);

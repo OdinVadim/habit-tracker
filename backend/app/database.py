@@ -1,9 +1,13 @@
+from pathlib import Path
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# .env всегда из папки backend, даже если uvicorn запущен из корня репозитория
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(_BACKEND_DIR / ".env")
 
 _raw_url = os.getenv("DATABASE_URL", "sqlite:///./habit_tracker.db").strip()
 # Драйвер psycopg (v3) для SQLAlchemy: postgresql+psycopg://
